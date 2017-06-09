@@ -220,18 +220,12 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
 
     gtk_widget_destroy((GtkWidget*)dialog);
 
-    switch(result)
+    if (result != GTK_RESPONSE_DELETE_EVENT)
     {
-    case GTK_RESPONSE_YES:
-      g_print("Lesao\n", result);
-      break;
-    case GTK_RESPONSE_NO:
-      g_print("Regiao sadia\n", result);
-      break;
-    case GTK_RESPONSE_DELETE_EVENT:
-      g_print("dialogado fechado\n", result);
-      return TRUE;
-      break;
+      bool injury = result == GTK_RESPONSE_YES;
+      FILE* fp = fopen("training.csv", "a");
+      fprintf(fp, "%d,%f,%f,%f,%f\n", injury ? 1 : 0, 0.0f, 0.0f, 0.0f, 0.0f);
+      fclose(fp);
     }
   }
   else
@@ -266,6 +260,71 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
   }
 
   return TRUE;
+}
+
+void check_homogenity(GtkWidget *widget, gpointer data)
+{
+}
+
+//iniciar fase de treinamento
+void visualize_classifier(GtkWidget *widget, gpointer data)
+{
+  GtkDialog *dialog;
+  GtkDialogFlags flags = (GtkDialogFlags)(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT);
+  dialog = (GtkDialog*)gtk_dialog_new_with_buttons ("Selecione os descritores", (GtkWindow*)window, flags, "_Visualizar", GTK_RESPONSE_YES, NULL);
+  GtkWidget *check1 = gtk_toggle_button_new_with_label ("Homogeneidade");
+  GtkWidget *check2 = gtk_toggle_button_new_with_label ("Entropia");
+  GtkWidget *check3 = gtk_toggle_button_new_with_label ("Energia");
+  GtkWidget *check4 = gtk_toggle_button_new_with_label ("Contraste");
+
+  gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog), check1, FALSE, FALSE, 10);
+  gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog), check2, FALSE, FALSE, 10);
+  gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog), check3, FALSE, FALSE, 10);
+  gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog), check4, FALSE, FALSE, 10);
+
+  gtk_widget_show (check1);
+  gtk_widget_show (check2);
+  gtk_widget_show (check3);
+  gtk_widget_show (check4);
+
+  gint result = gtk_dialog_run(dialog);
+
+  if (result != GTK_RESPONSE_DELETE_EVENT)
+  {
+    bool homogenity = gtk_toggle_button_get_active ((GtkToggleButton*) check1);
+    bool entropy = gtk_toggle_button_get_active ((GtkToggleButton*) check2);
+    bool energy = gtk_toggle_button_get_active ((GtkToggleButton*) check3);
+    bool contrast = gtk_toggle_button_get_active ((GtkToggleButton*) check4);
+
+    gtk_widget_destroy((GtkWidget*)dialog);
+
+    if (homogenity && entropy && energy && contrast)
+      return;
+
+    if (!homogenity && !entropy && !energy && !contrast)
+      return;
+
+    char params[200];
+
+    sprintf(params, "%s", "ruby plot.rb");
+
+    if (homogenity)
+      sprintf(params, "%s %s", params, "1");
+
+    if (entropy)
+      sprintf(params, "%s %s", params, "2");
+
+    if (energy)
+      sprintf(params, "%s %s", params, "3");
+
+    if (contrast)
+      sprintf(params, "%s %s", params, "4");
+
+    g_print(params);
+
+    system(params);
+    system("firefox /root/Desktop/pid2017/chart.html");
+  }
 }
 
 int main (int argc, char *argv[])
@@ -319,7 +378,7 @@ int main (int argc, char *argv[])
 	GtkWidget* classifyMi = gtk_menu_item_new_with_label("Classificar");
 
   GtkWidget* classifierMi = gtk_menu_item_new_with_label("Classificador");
-	GtkWidget* classifierOpenMi = gtk_menu_item_new_with_label("Abrir");
+	GtkWidget* classifierOpenMi = gtk_menu_item_new_with_label("Visualizar");
 
 	//cria hierarquia de menus
 	gtk_menu_item_set_submenu(GTK_MENU_ITEM(fileMi), fileMenu);
@@ -362,6 +421,7 @@ int main (int argc, char *argv[])
 	g_signal_connect(G_OBJECT(openMi), "activate", G_CALLBACK(load_file), NULL);
   g_signal_connect(G_OBJECT(trainMi), "activate", G_CALLBACK(set_training), NULL);
   g_signal_connect(G_OBJECT(windowingMi), "activate", G_CALLBACK(windowing), NULL);
+  g_signal_connect(G_OBJECT(classifierOpenMi), "activate", G_CALLBACK(visualize_classifier), NULL);
 	g_signal_connect_swapped(G_OBJECT(window), "destroy", G_CALLBACK(gtk_main_quit), NULL);
 
 	gtk_widget_show_all(window);

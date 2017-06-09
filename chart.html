@@ -1,0 +1,61 @@
+<html lang='en'>
+<head>
+  <title>Nyaplot</title>
+  <script src="http://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.14/require.min.js"></script>
+  <script>if(window['d3'] === undefined ||
+   window['Nyaplot'] === undefined){
+    var path = {"d3":"https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min","downloadable":"http://cdn.rawgit.com/domitry/d3-downloadable/master/d3-downloadable","THREE":"http://cdnjs.cloudflare.com/ajax/libs/three.js/r66/three.min","Elegans":"https://cdn.rawgit.com/domitry/elegans/d81a728f62edaeeb67261516a272438fb39fa80a/release/elegans"};
+
+
+
+    var shim = {"d3":{"exports":"d3"},"downloadable":{"exports":"downloadable"},"THREE":{"exports":"THREE"},"Elegans":{"exports":"Elegans"}};
+
+    require.config({paths: path, shim:shim});
+
+
+require(['d3'], function(d3){window['d3']=d3;console.log('finished loading d3');require(['downloadable'], function(downloadable){window['downloadable']=downloadable;console.log('finished loading downloadable');require(['THREE'], function(THREE){window['THREE']=THREE;console.log('finished loading THREE');require(['Elegans'], function(Elegans){window['Elegans']=Elegans;console.log('finished loading Elegans');
+
+	var script = d3.select("head")
+	    .append("script")
+	    .attr("src", "http://cdn.rawgit.com/domitry/Nyaplotjs/master/release/nyaplot.js")
+	    .attr("async", true);
+
+	script[0][0].onload = script[0][0].onreadystatechange = function(){
+
+
+	    var event = document.createEvent("HTMLEvents");
+	    event.initEvent("load_nyaplot",false,false);
+	    window.dispatchEvent(event);
+	    console.log('Finished loading Nyaplotjs');
+
+	};
+
+
+});});});});
+}
+</script>
+</head>
+<body><div id='vis-1f6b9263-62de-44a7-a813-d88488d63891'></div>
+<script>
+(function(){
+    var render = function(){
+        var model = {"panes":[{"diagrams":[{"type":"scatter","options":{"x":"data0","y":"data1","color":"#ff0000","title":"Lesoes"},"data":"b74334a7-18c9-4023-8cdc-358f316a6250"},{"type":"scatter","options":{"x":"data0","y":"data1","color":"#0000ff","title":"Regioes Sadias"},"data":"a994f3b9-3228-424d-a8ba-842411cf2204"}],"options":{"x_label":"Energia","y_label":"Contraste","legend":true,"zoom":true,"width":800,"xrange":[5,15],"yrange":[3,9]}}],"data":{"b74334a7-18c9-4023-8cdc-358f316a6250":[{"data0":10,"data1":3},{"data0":5,"data1":9}],"a994f3b9-3228-424d-a8ba-842411cf2204":[{"data0":8,"data1":7},{"data0":15,"data1":6}]},"extension":["Elegans"]}
+        var id_name = '#vis-1f6b9263-62de-44a7-a813-d88488d63891';
+        Nyaplot.core.parse(model, id_name);
+
+        require(['downloadable'], function(downloadable){
+          var svg = d3.select(id_name).select("svg");
+	  if(!svg.empty())
+	    svg.call(downloadable().filename('fig'));
+	});
+    };
+    if(window['Nyaplot']==undefined){
+        window.addEventListener('load_nyaplot', render, false);
+	return;
+    } else {
+       render();
+    }
+})();
+</script>
+</body>
+</html>
