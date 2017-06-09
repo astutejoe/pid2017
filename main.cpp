@@ -1,3 +1,5 @@
+#include <cairo.h>
+#include <math.h>
 #include <gtk/gtk.h>
 #include <gtkmm.h>
 #include <glib.h>
@@ -15,7 +17,10 @@ float zoom = 1.0f;
 GtkWidget *window, *image, *imagebox;
 cv::Mat img;
 
-float clicked_x, clicked_y;
+float clicked_x, clicked_y, released_x, released_y;
+float widget_clicked_x, widget_clicked_y, widget_released_x, widget_released_y;
+
+bool training = false;
 
 //funcao de utilidade para retornar o caminho de um dialog box do GTK
 char* get_file()
@@ -134,6 +139,30 @@ void windowing(GtkWidget *widget, gpointer data)
   zoom = 1.0f;
 }
 
+//iniciar fase de treinamento
+void set_training(GtkWidget *widget, gpointer data)
+{
+  training = !training;
+}
+
+static gboolean on_draw_event(GtkWidget *widget, cairo_t *cr, gpointer user_data)
+{
+  if (training)
+  {
+    cairo_set_source_rgb(cr, 0.9, 0.5, 0);
+    cairo_set_line_width(cr, 3);
+
+    cairo_translate(cr, widget_clicked_x, widget_clicked_y);
+    float radius = sqrt(pow(widget_clicked_x - widget_released_x, 2) + pow(widget_clicked_y - widget_released_y, 2));
+
+    cairo_arc(cr, 0, 0, radius, 0, 2 * M_PI);
+
+    cairo_stroke_preserve(cr);
+  }
+
+  return FALSE;
+}
+
 static gboolean image_clicked (GtkWidget *event_box, GdkEventButton *event, gpointer data)
 {
   g_print ("Click nas coordenadas %f,%f\n", event->x, event->y);
@@ -142,7 +171,23 @@ static gboolean image_clicked (GtkWidget *event_box, GdkEventButton *event, gpoi
   clicked_x = (event->x - IMGBOX_WIDTH/2 + (img.cols * zoom)/2) / zoom;
   clicked_y = event->y / zoom;
 
+  widget_clicked_x = event->x;
+  widget_clicked_y = event->y;
+
   g_print ("Click nas coordenadas da imagem %f,%f\n", clicked_x, clicked_y);
+
+  return TRUE;
+}
+
+static gboolean image_click_hover (GtkWidget *event_box, GdkEventButton *event, gpointer data)
+{
+  if (training)
+  {
+    widget_released_x = event->x;
+    widget_released_y = event->y;
+
+    gtk_widget_queue_draw(event_box);
+  }
 
   return TRUE;
 }
@@ -152,8 +197,11 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
   g_print ("Click solto nas coordenadas %f,%f\n", event->x, event->y);
 
   //CORRIGE O DESLOCAMENTO HORIZONTAL DA IMAGEM NO CONTAINER E CALCULA A COORDENADA DADO CERTO ZOOM
-  float released_x = (event->x - IMGBOX_WIDTH/2 + (img.cols * zoom)/2) / zoom;
-  float released_y = event->y / zoom;
+  released_x = (event->x - IMGBOX_WIDTH/2 + (img.cols * zoom)/2) / zoom;
+  released_y = event->y / zoom;
+
+  widget_released_x = event->x;
+  widget_released_y = event->y;
 
   g_print ("Click solto nas coordenadas da imagem %f,%f\n", released_x, released_y);
 
@@ -161,33 +209,61 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
   if (clicked_x < 0 || released_x < 0 || clicked_y > (img.rows*zoom) || released_y > (img.rows*zoom))
     return TRUE;
 
-  float width = abs(clicked_x - released_x);
-  float height = abs(clicked_y - released_y);
+  if (training)
+  {
+    gtk_widget_queue_draw(event_box);
 
-  float begin_x = clicked_x < released_x ? clicked_x : released_x;
-  float begin_y = clicked_y < released_y ? clicked_y : released_y;
+    GtkDialog *dialog;
+    GtkDialogFlags flags = (GtkDialogFlags)(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT);
+    dialog = (GtkDialog*)gtk_dialog_new_with_buttons ("Esta região corresponde a uma:", (GtkWindow*)window, flags, "_Lesão", GTK_RESPONSE_YES, "_Região sadia", GTK_RESPONSE_NO, NULL);
+    gint result = gtk_dialog_run(dialog);
 
-  cv::Rect ROI(begin_x, begin_y, width, height);
+    gtk_widget_destroy((GtkWidget*)dialog);
 
-  cv::Mat croppedImage = img(ROI);
+    switch(result)
+    {
+    case GTK_RESPONSE_YES:
+      g_print("Lesao\n", result);
+      break;
+    case GTK_RESPONSE_NO:
+      g_print("Regiao sadia\n", result);
+      break;
+    case GTK_RESPONSE_DELETE_EVENT:
+      g_print("dialogado fechado\n", result);
+      return TRUE;
+      break;
+    }
+  }
+  else
+  {
+    float width = abs(clicked_x - released_x);
+    float height = abs(clicked_y - released_y);
 
-  GdkPixbuf* pixbuf = gdk_pixbuf_new_from_data(
-    croppedImage.data,
-    GDK_COLORSPACE_RGB,
-    false,
-    8,
-    croppedImage.cols,
-    croppedImage.rows,
-    croppedImage.step,
-    NULL,
-    NULL
-  );
+    float begin_x = clicked_x < released_x ? clicked_x : released_x;
+    float begin_y = clicked_y < released_y ? clicked_y : released_y;
 
-  gtk_image_set_from_pixbuf(GTK_IMAGE(image), pixbuf);
+    cv::Rect ROI(begin_x, begin_y, width, height);
 
-  img = img(ROI);
+    cv::Mat croppedImage = img(ROI);
 
-  zoom = 1.0f;
+    GdkPixbuf* pixbuf = gdk_pixbuf_new_from_data(
+      croppedImage.data,
+      GDK_COLORSPACE_RGB,
+      false,
+      8,
+      croppedImage.cols,
+      croppedImage.rows,
+      croppedImage.step,
+      NULL,
+      NULL
+    );
+
+    gtk_image_set_from_pixbuf(GTK_IMAGE(image), pixbuf);
+
+    img = img(ROI);
+
+    zoom = 1.0f;
+  }
 
   return TRUE;
 }
@@ -239,17 +315,11 @@ int main (int argc, char *argv[])
 
   GtkWidget* toolsMi = gtk_menu_item_new_with_label("Ferramentas");
 	GtkWidget* windowingMi = gtk_menu_item_new_with_label("Janelamento");
-	GtkWidget* collectInjuredMi = gtk_menu_item_new_with_label("Coletar Regiões de Lesões");
-	GtkWidget* collectHealthyMi = gtk_menu_item_new_with_label("Coletar Regiões Sadias");
+	GtkWidget* trainMi = gtk_menu_item_new_with_label("Treinar/Parar");
+	GtkWidget* classifyMi = gtk_menu_item_new_with_label("Classificar");
 
   GtkWidget* classifierMi = gtk_menu_item_new_with_label("Classificador");
-  GtkWidget* char1Mi = gtk_check_menu_item_new_with_label("Caracteristica 1");
-  GtkWidget* char2Mi = gtk_check_menu_item_new_with_label("Caracteristica 2");
-  GtkWidget* char3Mi = gtk_check_menu_item_new_with_label("Caracteristica 3");
-  GtkWidget* char4Mi = gtk_check_menu_item_new_with_label("Caracteristica 4");
-	GtkWidget* trainMi = gtk_menu_item_new_with_label("Treinar");
-  GtkWidget* classify1Mi = gtk_menu_item_new_with_label("Classificar com X");
-  GtkWidget* classify2Mi = gtk_menu_item_new_with_label("Classificar com Y");
+	GtkWidget* classifierOpenMi = gtk_menu_item_new_with_label("Abrir");
 
 	//cria hierarquia de menus
 	gtk_menu_item_set_submenu(GTK_MENU_ITEM(fileMi), fileMenu);
@@ -258,17 +328,11 @@ int main (int argc, char *argv[])
 
 	gtk_menu_item_set_submenu(GTK_MENU_ITEM(toolsMi), toolsMenu);
   gtk_menu_shell_append(GTK_MENU_SHELL(toolsMenu), windowingMi);
-  gtk_menu_shell_append(GTK_MENU_SHELL(toolsMenu), collectInjuredMi);
-  gtk_menu_shell_append(GTK_MENU_SHELL(toolsMenu), collectHealthyMi);
+  gtk_menu_shell_append(GTK_MENU_SHELL(toolsMenu), trainMi);
+  gtk_menu_shell_append(GTK_MENU_SHELL(toolsMenu), classifyMi);
 
 	gtk_menu_item_set_submenu(GTK_MENU_ITEM(classifierMi), classifierMenu);
-  gtk_menu_shell_append(GTK_MENU_SHELL(classifierMenu), char1Mi);
-  gtk_menu_shell_append(GTK_MENU_SHELL(classifierMenu), char2Mi);
-  gtk_menu_shell_append(GTK_MENU_SHELL(classifierMenu), char3Mi);
-  gtk_menu_shell_append(GTK_MENU_SHELL(classifierMenu), char4Mi);
-  gtk_menu_shell_append(GTK_MENU_SHELL(classifierMenu), trainMi);
-  gtk_menu_shell_append(GTK_MENU_SHELL(classifierMenu), classify1Mi);
-  gtk_menu_shell_append(GTK_MENU_SHELL(classifierMenu), classify2Mi);
+  gtk_menu_shell_append(GTK_MENU_SHELL(classifierMenu), classifierOpenMi);
 
   gtk_menu_shell_append(GTK_MENU_SHELL(menubar), fileMi);
   gtk_menu_shell_append(GTK_MENU_SHELL(menubar), toolsMi);
@@ -277,9 +341,9 @@ int main (int argc, char *argv[])
 	//empacote a barra do menu no container do menu
   gtk_box_pack_start(GTK_BOX(menubox), menubar, FALSE, FALSE, 0);
 
-	image = gtk_image_new_from_file("taurus_striker.jpg");
+	image = gtk_image_new_from_file("images/IM_00104.TIF");
 
-  img = cv::imread("taurus_striker.jpg");
+  img = cv::imread("images/IM_00104.TIF");
   cv::cvtColor(img, img, CV_BGR2RGB);
 
   gtk_container_add(GTK_CONTAINER(imagebox), image);
@@ -291,9 +355,12 @@ int main (int argc, char *argv[])
   gtk_widget_add_events(GTK_WIDGET(imagebox), GDK_SCROLL_MASK);
   g_signal_connect(G_OBJECT(imagebox), "scroll_event", G_CALLBACK(HandleMouseScrollWheel), NULL);
   g_signal_connect(G_OBJECT(imagebox), "button_press_event", G_CALLBACK (image_clicked), image);
+  g_signal_connect(G_OBJECT(imagebox), "motion_notify_event", G_CALLBACK (image_click_hover), image);
   g_signal_connect(G_OBJECT(imagebox), "button_release_event", G_CALLBACK (image_released), image);
+  g_signal_connect_after(G_OBJECT(imagebox), "draw", G_CALLBACK (on_draw_event), NULL);
 	g_signal_connect(G_OBJECT(quitMi), "activate", G_CALLBACK(gtk_main_quit), NULL);
 	g_signal_connect(G_OBJECT(openMi), "activate", G_CALLBACK(load_file), NULL);
+  g_signal_connect(G_OBJECT(trainMi), "activate", G_CALLBACK(set_training), NULL);
   g_signal_connect(G_OBJECT(windowingMi), "activate", G_CALLBACK(windowing), NULL);
 	g_signal_connect_swapped(G_OBJECT(window), "destroy", G_CALLBACK(gtk_main_quit), NULL);
 
