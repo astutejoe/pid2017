@@ -691,10 +691,138 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
               gtk_dialog_run(result_dialog);
               gtk_widget_destroy((GtkWidget*)result_dialog);
             }
-
           }
 
           fclose(fp);
+        }
+        else if (mahalanobis)
+        {
+          FILE* fp = fopen("training.csv", "r");
+
+          int injuries = 0;
+          int healthies = 0;
+
+          int max_rows = 10000;
+
+          int descritors_num = 0;
+
+          if (s_entropy) descritors_num++;
+          if (s_energy) descritors_num++;
+          if (s_contrast) descritors_num++;
+          if (s_homogenity) descritors_num++;
+
+          cv::Mat injury_matrix = cv::Mat::zeros(max_rows, descritors_num, CV_32FC1);
+          cv::Mat healthy_matrix = cv::Mat::zeros(max_rows, descritors_num, CV_32FC1);
+
+          char line[1024];
+          while (fgets(line, 1024, fp))
+          {
+            char* tmp = strdup(line);
+            bool injury = atoi(getfield(tmp,1)) == 1;
+            free(tmp);
+
+            int descs = 0;
+
+            if (s_homogenity)
+            {
+              char* tmp = strdup(line);
+
+              if (injury)
+                injury_matrix.at<float>(injuries, descs++) = atof(getfield(tmp, 2));
+              else
+                healthy_matrix.at<float>(healthies, descs++) = atof(getfield(tmp, 2));
+
+              free(tmp);
+            }
+
+            if (s_entropy)
+            {
+              char* tmp = strdup(line);
+
+              if (injury)
+                injury_matrix.at<float>(injuries, descs++) = atof(getfield(tmp, 3));
+              else
+                healthy_matrix.at<float>(healthies, descs++) = atof(getfield(tmp, 3));
+
+              free(tmp);
+            }
+
+            if (s_energy)
+            {
+              char* tmp = strdup(line);
+
+              if (injury)
+                injury_matrix.at<float>(injuries, descs++) = atof(getfield(tmp, 4));
+              else
+                healthy_matrix.at<float>(healthies, descs++) = atof(getfield(tmp, 4));
+
+              free(tmp);
+            }
+
+            if (s_contrast)
+            {
+              char* tmp = strdup(line);
+
+              if (injury)
+                injury_matrix.at<float>(injuries, descs++) = atof(getfield(tmp, 5));
+              else
+                healthy_matrix.at<float>(healthies, descs++) = atof(getfield(tmp, 5));
+
+              free(tmp);
+            }
+
+            if (injury)
+              injuries++;
+            else
+              healthies++;
+          }
+
+          injury_matrix = injury_matrix(cv::Rect(0, 0, descritors_num, injuries));
+          healthy_matrix = healthy_matrix(cv::Rect(0, 0, descritors_num, healthies));
+
+          cv::Mat region_matrix = cv::Mat::zeros(1, descritors_num, CV_32FC1);
+
+          int descs = 0;
+
+          if (s_homogenity)
+            region_matrix.at<float>(descs++) = homogenity;
+
+          if (s_entropy)
+            region_matrix.at<float>(descs++) = entropy;
+
+          if (s_energy)
+            region_matrix.at<float>(descs++) = energy;
+
+          if (s_contrast)
+            region_matrix.at<float>(descs++) = contrast;
+
+          cv::Mat injury_covar, injury_mean, injury_icovar;
+          cv::Mat healthy_covar, healthy_mean, healthy_icovar;
+
+          cv::calcCovarMatrix(injury_matrix, injury_covar, injury_mean, cv::COVAR_NORMAL | CV_COVAR_ROWS, CV_32FC1);
+          cv::invert(injury_covar, injury_icovar, cv::DECOMP_SVD);
+
+          cv::calcCovarMatrix(healthy_matrix, healthy_covar, healthy_mean, cv::COVAR_NORMAL | CV_COVAR_ROWS, CV_32FC1);
+          cv::invert(healthy_covar, healthy_icovar, cv::DECOMP_SVD);
+
+          double injury_distance = cv::Mahalanobis(region_matrix, injury_mean, injury_icovar);
+          g_print("%f\n", injury_distance);
+
+          double healthy_distance = cv::Mahalanobis(region_matrix, healthy_mean, healthy_icovar);
+          g_print("%f\n", healthy_distance);
+
+          if (injury_distance < healthy_distance)
+          {
+            GtkDialog* result_dialog = (GtkDialog*)gtk_message_dialog_new((GtkWindow*)window, flags, (GtkMessageType)GTK_MESSAGE_INFO, (GtkButtonsType)GTK_BUTTONS_OK, "O software detectou uma lesão", NULL);
+            gtk_dialog_run(result_dialog);
+            gtk_widget_destroy((GtkWidget*)result_dialog);
+          }
+          else
+          {
+            GtkDialog* result_dialog = (GtkDialog*)gtk_message_dialog_new((GtkWindow*)window, flags, (GtkMessageType)GTK_MESSAGE_INFO, (GtkButtonsType)GTK_BUTTONS_OK, "Região aparentemente sadia", NULL);
+            gtk_dialog_run(result_dialog);
+            gtk_widget_destroy((GtkWidget*)result_dialog);
+          }
         }
       }
     }
