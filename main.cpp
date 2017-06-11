@@ -209,6 +209,20 @@ static gboolean image_click_hover (GtkWidget *event_box, GdkEventButton *event, 
   return TRUE;
 }
 
+static const char* getfield(char* line, int num)
+{
+    const char* tok;
+    for (tok = strtok(line, ",");
+            tok && *tok;
+            tok = strtok(NULL, ",\n"))
+    {
+        if (!--num)
+            return tok;
+    }
+    return NULL;
+}
+
+
 static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpointer data)
 {
   g_print ("Click solto nas coordenadas %f,%f\n", event->x, event->y);
@@ -362,15 +376,13 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
 
       cv::normalize(hist, hist, 0, hist_image.rows, cv::NORM_MINMAX, -1, cv::Mat() );
 
-      /// Draw for each channel
-      for( int i = 1; i < GLCM_GRAY_SCALE; i++ )
+      for(int i = 1; i < GLCM_GRAY_SCALE; i++)
       {
           cv::line( hist_image, cv::Point( bin_w*(i-1), hist_h - cvRound(hist.at<float>(i-1)) ) ,
                            cv::Point( bin_w*(i), hist_h - cvRound(hist.at<float>(i)) ),
                            cv::Scalar( 0, 0, 255), 2, 8, 0  );
       }
 
-      /// Display
       cv::namedWindow("Histograma", CV_WINDOW_AUTOSIZE );
       cv::imshow("Histograma", hist_image );
 
@@ -408,10 +420,10 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
 
     if (result != GTK_RESPONSE_DELETE_EVENT)
     {
-      bool homogenity = gtk_toggle_button_get_active ((GtkToggleButton*) check1);
-      bool entropy = gtk_toggle_button_get_active ((GtkToggleButton*) check2);
-      bool energy = gtk_toggle_button_get_active ((GtkToggleButton*) check3);
-      bool contrast = gtk_toggle_button_get_active ((GtkToggleButton*) check4);
+      bool s_homogenity = gtk_toggle_button_get_active ((GtkToggleButton*) check1);
+      bool s_entropy = gtk_toggle_button_get_active ((GtkToggleButton*) check2);
+      bool s_energy = gtk_toggle_button_get_active ((GtkToggleButton*) check3);
+      bool s_contrast = gtk_toggle_button_get_active ((GtkToggleButton*) check4);
 
       gtk_widget_destroy((GtkWidget*)dialog);
 
@@ -438,6 +450,252 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
         bool mahalanobis = gtk_toggle_button_get_active ((GtkToggleButton*) check7);
 
         gtk_widget_destroy((GtkWidget*)dialog2);
+
+        float energy = 0.0f;
+        float contrast = 0.0f;
+        float homogenity = 0.0f;
+        float entropy = 0.0f;
+        int rows = img.rows;
+        int cols = img.cols;
+
+        cv::Mat glcm_c1 = cv::Mat::zeros(GLCM_GRAY_SCALE, GLCM_GRAY_SCALE, CV_32FC1);
+        cv::Mat glcm_c2 = cv::Mat::zeros(GLCM_GRAY_SCALE, GLCM_GRAY_SCALE, CV_32FC1);
+        cv::Mat glcm_c3 = cv::Mat::zeros(GLCM_GRAY_SCALE, GLCM_GRAY_SCALE, CV_32FC1);
+        cv::Mat glcm_c5 = cv::Mat::zeros(GLCM_GRAY_SCALE, GLCM_GRAY_SCALE, CV_32FC1);
+
+        cv::Mat gray_image;
+
+        //Converte de RGB pra gray scale
+        cvtColor(img, gray_image, cv::COLOR_RGB2GRAY);
+
+        //Reamostra o numero de tons de cinza pra 32
+        cv::normalize(gray_image, gray_image, 0, GLCM_GRAY_SCALE, cv::NORM_MINMAX);
+
+        //Calcula as GCLMs ignorando pixels de borda.
+        for(int i = 1; i < rows-1; i++)
+        {
+          for(int j = 0; j < cols-1; j++)
+          {
+            //checa se o ponto esta dentro do circulo desenhado para classificacao
+            cv::Point2f center(clicked_x, clicked_y);
+            cv::Point2f point(i,j);
+
+            float circle_radius = sqrt(pow(clicked_x - released_x, 2) + pow(clicked_y - released_y, 2));
+
+            double point_distance_from_center = cv::norm(center - point);
+
+            if (point_distance_from_center <= circle_radius)
+            {
+              glcm_c1.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i,j+1)) = glcm_c1.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i,j+1)) + 1;
+              glcm_c2.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i-1,j+1)) = glcm_c2.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i-1,j+1)) + 1;
+              glcm_c3.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i-1,j)) = glcm_c3.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i-1,j)) + 1;
+              glcm_c5.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i+1,j)) = glcm_c5.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i+1,j)) + 1;
+            }
+          }
+        }
+
+        //Normaliza as GLCM's, transpondo e dividindo pelo somatorio total
+        glcm_c1 = glcm_c1 + glcm_c1.t();
+        glcm_c1 = glcm_c1 / sum(glcm_c1)[0];
+
+        glcm_c2 = glcm_c2 + glcm_c2.t();
+        glcm_c2 = glcm_c2 / sum(glcm_c2)[0];
+
+        glcm_c3 = glcm_c3 + glcm_c3.t();
+        glcm_c3 = glcm_c3 / sum(glcm_c3)[0];
+
+        glcm_c5 = glcm_c5 + glcm_c5.t();
+        glcm_c5 = glcm_c5 / sum(glcm_c5)[0];
+
+        //calcula os descritores
+        for(int i = 0; i < GLCM_GRAY_SCALE; i++)
+        {
+          for(int j = 0; j < GLCM_GRAY_SCALE; j++)
+          {
+            if (s_energy)
+            {
+              energy = energy + glcm_c1.at<float>(i,j) * glcm_c1.at<float>(i,j);
+              energy = energy + glcm_c2.at<float>(i,j) * glcm_c2.at<float>(i,j);
+              energy = energy + glcm_c3.at<float>(i,j) * glcm_c3.at<float>(i,j);
+              energy = energy + glcm_c5.at<float>(i,j) * glcm_c5.at<float>(i,j);
+            }
+
+            if (s_contrast)
+            {
+              contrast = contrast + (i-j) * (i-j) * glcm_c1.at<float>(i,j);
+              contrast = contrast + (i-j) * (i-j) * glcm_c2.at<float>(i,j);
+              contrast = contrast + (i-j) * (i-j) * glcm_c3.at<float>(i,j);
+              contrast = contrast + (i-j) * (i-j) * glcm_c5.at<float>(i,j);
+            }
+
+            if (s_homogenity)
+            {
+              homogenity = homogenity + glcm_c1.at<float>(i,j) / (1 + abs(i-j));
+              homogenity = homogenity + glcm_c2.at<float>(i,j) / (1 + abs(i-j));
+              homogenity = homogenity + glcm_c3.at<float>(i,j) / (1 + abs(i-j));
+              homogenity = homogenity + glcm_c5.at<float>(i,j) / (1 + abs(i-j));
+            }
+
+            if (s_entropy)
+            {
+              if(glcm_c1.at<float>(i,j) != 0)
+                entropy = entropy - glcm_c1.at<float>(i,j) * log2(glcm_c1.at<float>(i,j));
+
+              if(glcm_c2.at<float>(i,j) != 0)
+                entropy = entropy - glcm_c2.at<float>(i,j) * log2(glcm_c2.at<float>(i,j));
+
+              if(glcm_c3.at<float>(i,j) != 0)
+                entropy = entropy - glcm_c3.at<float>(i,j) * log2(glcm_c3.at<float>(i,j));
+
+              if(glcm_c5.at<float>(i,j) != 0)
+                entropy = entropy - glcm_c5.at<float>(i,j) * log2(glcm_c5.at<float>(i,j));
+            }
+          }
+        }
+
+        //pegamos a media de cada matriz de co-ocorrencia
+        energy = energy / 4.0f;
+        contrast = contrast / 4.0f;
+        homogenity = homogenity / 4.0f;
+        entropy = entropy / 4.0f;
+
+        if (euclidian)
+        {
+          FILE* fp = fopen("training.csv", "r");
+
+          float injury_entropy_mean = 0.0f;
+          float injury_contrast_mean = 0.0f;
+          float injury_energy_mean = 0.0f;
+          float injury_homogenity_mean = 0.0f;
+
+          float healthy_entropy_mean = 0.0f;
+          float healthy_contrast_mean = 0.0f;
+          float healthy_energy_mean = 0.0f;
+          float healthy_homogenity_mean = 0.0f;
+
+          int injuries = 0;
+          int healthies = 0;
+
+          char line[1024];
+          while (fgets(line, 1024, fp))
+          {
+            char* tmp = strdup(line);
+            bool injury = atoi(getfield(tmp,1)) == 1;
+            free(tmp);
+
+            if (injury)
+              injuries++;
+            else
+              healthies++;
+
+            if (s_homogenity)
+            {
+              char* tmp = strdup(line);
+
+              if (injury)
+                injury_homogenity_mean = injury_homogenity_mean + atof(getfield(tmp, 2));
+              else
+                healthy_homogenity_mean = healthy_homogenity_mean + atof(getfield(tmp, 2));
+
+              free(tmp);
+            }
+
+            if (s_entropy)
+            {
+              char* tmp = strdup(line);
+
+              if (injury)
+                injury_entropy_mean = injury_entropy_mean + atof(getfield(tmp, 3));
+              else
+                healthy_entropy_mean = healthy_entropy_mean + atof(getfield(tmp, 3));
+
+              free(tmp);
+            }
+
+            if (s_energy)
+            {
+              char* tmp = strdup(line);
+
+              if (injury)
+                injury_energy_mean = injury_energy_mean + atof(getfield(tmp, 4));
+              else
+                healthy_energy_mean = healthy_energy_mean + atof(getfield(tmp, 4));
+
+              free(tmp);
+            }
+
+            if (s_contrast)
+            {
+              char* tmp = strdup(line);
+
+              if (injury)
+                injury_contrast_mean = injury_contrast_mean + atof(getfield(tmp, 5));
+              else
+                healthy_contrast_mean = healthy_contrast_mean + atof(getfield(tmp, 5));
+
+              free(tmp);
+            }
+          }
+
+          if (injuries > 0 && healthies > 0)
+          {
+            injury_entropy_mean = injury_entropy_mean / injuries;
+            injury_energy_mean = injury_energy_mean / injuries;
+            injury_contrast_mean = injury_contrast_mean / injuries;
+            injury_homogenity_mean = injury_homogenity_mean / injuries;
+
+            healthy_entropy_mean = healthy_entropy_mean / healthies;
+            healthy_energy_mean = healthy_energy_mean / healthies;
+            healthy_contrast_mean = healthy_contrast_mean / healthies;
+            healthy_homogenity_mean = healthy_homogenity_mean / healthies;
+
+            float injury_distance = 0.0f;
+            float healthy_distance = 0.0f;
+
+            if (s_entropy)
+            {
+                injury_distance = injury_distance + pow(entropy - injury_entropy_mean, 2);
+                healthy_distance = healthy_distance + pow(entropy - healthy_entropy_mean, 2);
+            }
+
+            if (s_energy)
+            {
+                injury_distance = injury_distance + pow(energy - injury_energy_mean, 2);
+                healthy_distance = healthy_distance + pow(energy - healthy_energy_mean, 2);
+            }
+
+            if (s_contrast)
+            {
+                injury_distance = injury_distance + pow(contrast - injury_contrast_mean, 2);
+                healthy_distance = healthy_distance + pow(contrast - healthy_contrast_mean, 2);
+            }
+
+            if (s_homogenity)
+            {
+                injury_distance = injury_distance + pow(homogenity - injury_homogenity_mean, 2);
+                healthy_distance = healthy_distance + pow(homogenity - healthy_homogenity_mean, 2);
+            }
+
+            injury_distance = sqrt(injury_distance);
+            healthy_distance = sqrt(healthy_distance);
+
+            if (injury_distance < healthy_distance)
+            {
+              GtkDialog* result_dialog = (GtkDialog*)gtk_message_dialog_new((GtkWindow*)window, flags, (GtkMessageType)GTK_MESSAGE_INFO, (GtkButtonsType)GTK_BUTTONS_OK, "O software detectou uma lesão", NULL);
+              gtk_dialog_run(result_dialog);
+              gtk_widget_destroy((GtkWidget*)result_dialog);
+            }
+            else
+            {
+              GtkDialog* result_dialog = (GtkDialog*)gtk_message_dialog_new((GtkWindow*)window, flags, (GtkMessageType)GTK_MESSAGE_INFO, (GtkButtonsType)GTK_BUTTONS_OK, "Região aparentemente sadia", NULL);
+              gtk_dialog_run(result_dialog);
+              gtk_widget_destroy((GtkWidget*)result_dialog);
+            }
+
+          }
+
+          fclose(fp);
+        }
       }
     }
   }
