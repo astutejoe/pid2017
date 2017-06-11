@@ -14,6 +14,8 @@ float zoom = 1.0f;
 #define MAX_WIDTH 1280
 #define MAX_HEIGHT 720
 
+#define GLCM_GRAY_SCALE 32
+
 GtkWidget *window, *image, *imagebox;
 cv::Mat img;
 
@@ -21,6 +23,7 @@ float clicked_x, clicked_y, released_x, released_y;
 float widget_clicked_x, widget_clicked_y, widget_released_x, widget_released_y;
 
 bool training = false;
+bool classifying = false;
 
 //funcao de utilidade para retornar o caminho de um dialog box do GTK
 char* get_file()
@@ -139,17 +142,31 @@ void windowing(GtkWidget *widget, gpointer data)
   zoom = 1.0f;
 }
 
-//iniciar fase de treinamento
+//inicia/para fase de treinamento
 void set_training(GtkWidget *widget, gpointer data)
 {
   training = !training;
+  if (training)
+    classifying = false;
+}
+
+//inicia/para fase de classificacao
+void set_classifying(GtkWidget *widget, gpointer data)
+{
+  classifying = !classifying;
+  if (classifying)
+    training = false;
 }
 
 static gboolean on_draw_event(GtkWidget *widget, cairo_t *cr, gpointer user_data)
 {
-  if (training)
+  if (training || classifying)
   {
-    cairo_set_source_rgb(cr, 0.9, 0.5, 0);
+    if (training)
+      cairo_set_source_rgb(cr, 0.9, 0.5, 0);
+    else
+      cairo_set_source_rgb(cr, 0.5, 0.9, 0);
+
     cairo_set_line_width(cr, 3);
 
     cairo_translate(cr, widget_clicked_x, widget_clicked_y);
@@ -181,7 +198,7 @@ static gboolean image_clicked (GtkWidget *event_box, GdkEventButton *event, gpoi
 
 static gboolean image_click_hover (GtkWidget *event_box, GdkEventButton *event, gpointer data)
 {
-  if (training)
+  if (training || classifying)
   {
     widget_released_x = event->x;
     widget_released_y = event->y;
@@ -223,9 +240,205 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
     if (result != GTK_RESPONSE_DELETE_EVENT)
     {
       bool injury = result == GTK_RESPONSE_YES;
+
+      float energy = 0.0f;
+      float contrast = 0.0f;
+      float homogenity = 0.0f;
+      float entropy = 0.0f;
+      int rows = img.rows;
+      int cols = img.cols;
+
+      cv::Mat glcm_c1 = cv::Mat::zeros(GLCM_GRAY_SCALE, GLCM_GRAY_SCALE, CV_32FC1);
+      cv::Mat glcm_c2 = cv::Mat::zeros(GLCM_GRAY_SCALE, GLCM_GRAY_SCALE, CV_32FC1);
+      cv::Mat glcm_c3 = cv::Mat::zeros(GLCM_GRAY_SCALE, GLCM_GRAY_SCALE, CV_32FC1);
+      cv::Mat glcm_c5 = cv::Mat::zeros(GLCM_GRAY_SCALE, GLCM_GRAY_SCALE, CV_32FC1);
+
+      cv::Mat gray_image;
+
+      //Converte de RGB pra gray scale
+      cvtColor(img, gray_image, cv::COLOR_RGB2GRAY);
+
+      //Reamostra o numero de tons de cinza pra 32
+      cv::normalize(gray_image, gray_image, 0, GLCM_GRAY_SCALE, cv::NORM_MINMAX);
+
+      //Calcula as GCLMs ignorando pixels de borda.
+      for(int i = 1; i < rows-1; i++)
+      {
+        for(int j = 0; j < cols-1; j++)
+        {
+          //checa se o ponto esta dentro do circulo desenhado para treinamento
+          cv::Point2f center(clicked_x, clicked_y);
+          cv::Point2f point(i,j);
+
+          float circle_radius = sqrt(pow(clicked_x - released_x, 2) + pow(clicked_y - released_y, 2));
+
+          double point_distance_from_center = cv::norm(center - point);
+
+          if (point_distance_from_center <= circle_radius)
+          {
+            glcm_c1.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i,j+1)) = glcm_c1.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i,j+1)) + 1;
+            glcm_c2.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i-1,j+1)) = glcm_c2.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i,j+1)) + 1;
+            glcm_c3.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i-1,j)) = glcm_c3.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i,j+1)) + 1;
+            glcm_c5.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i+1,j)) = glcm_c5.at<float>(gray_image.at<uchar>(i,j), gray_image.at<uchar>(i,j+1)) + 1;
+          }
+        }
+      }
+
+      //Normaliza as GLCM's, transpondo e dividindo pelo somatorio total
+      glcm_c1 = glcm_c1 + glcm_c1.t();
+      glcm_c1 = glcm_c1 / sum(glcm_c1)[0];
+
+      glcm_c2 = glcm_c2 + glcm_c2.t();
+      glcm_c2 = glcm_c2 / sum(glcm_c2)[0];
+
+      glcm_c3 = glcm_c3 + glcm_c3.t();
+      glcm_c3 = glcm_c3 / sum(glcm_c3)[0];
+
+      glcm_c5 = glcm_c5 + glcm_c5.t();
+      glcm_c5 = glcm_c5 / sum(glcm_c5)[0];
+
+      //calcula os descritores
+      for(int i = 0; i < GLCM_GRAY_SCALE; i++)
+      {
+        for(int j = 0; j < GLCM_GRAY_SCALE; j++)
+        {
+          energy = energy + glcm_c1.at<float>(i,j) * glcm_c1.at<float>(i,j);
+          energy = energy + glcm_c2.at<float>(i,j) * glcm_c2.at<float>(i,j);
+          energy = energy + glcm_c3.at<float>(i,j) * glcm_c3.at<float>(i,j);
+          energy = energy + glcm_c5.at<float>(i,j) * glcm_c5.at<float>(i,j);
+
+          contrast = contrast + (i-j) * (i-j) * glcm_c1.at<float>(i,j);
+          contrast = contrast + (i-j) * (i-j) * glcm_c2.at<float>(i,j);
+          contrast = contrast + (i-j) * (i-j) * glcm_c3.at<float>(i,j);
+          contrast = contrast + (i-j) * (i-j) * glcm_c5.at<float>(i,j);
+
+          homogenity = homogenity + glcm_c1.at<float>(i,j) / (1 + abs(i-j));
+          homogenity = homogenity + glcm_c2.at<float>(i,j) / (1 + abs(i-j));
+          homogenity = homogenity + glcm_c3.at<float>(i,j) / (1 + abs(i-j));
+          homogenity = homogenity + glcm_c5.at<float>(i,j) / (1 + abs(i-j));
+
+          if(glcm_c1.at<float>(i,j) != 0)
+            entropy = entropy - glcm_c1.at<float>(i,j) * log2(glcm_c1.at<float>(i,j));
+
+          if(glcm_c2.at<float>(i,j) != 0)
+            entropy = entropy - glcm_c2.at<float>(i,j) * log2(glcm_c2.at<float>(i,j));
+
+          if(glcm_c3.at<float>(i,j) != 0)
+            entropy = entropy - glcm_c3.at<float>(i,j) * log2(glcm_c3.at<float>(i,j));
+
+          if(glcm_c5.at<float>(i,j) != 0)
+            entropy = entropy - glcm_c5.at<float>(i,j) * log2(glcm_c5.at<float>(i,j));
+        }
+      }
+
+      //pegamos a media de cada matriz de co-ocorrencia
+      energy = energy / 4.0f;
+      contrast = contrast / 4.0f;
+      homogenity = homogenity / 4.0f;
+      entropy = entropy / 4.0f;
+
+      GtkDialog* result_dialog = (GtkDialog*)gtk_message_dialog_new((GtkWindow*)window, flags, (GtkMessageType)GTK_MESSAGE_INFO, (GtkButtonsType)GTK_BUTTONS_OK, "Homogenidade = %f\nEntropia=%f\nEnergia=%f\nContraste=%f\n", homogenity, entropy, energy, contrast, NULL);
+
+      //Calcula o histograma para informar melhor o usuario
+      float range[] = { 0, GLCM_GRAY_SCALE } ;
+      const float* hist_range = { range };
+      bool uniform = true;
+      bool accumulate = false;
+      int glcm_gray_scale = GLCM_GRAY_SCALE;
+
+      float circle_radius = sqrt(pow(clicked_x - released_x, 2) + pow(clicked_y - released_y, 2));
+
+      cv::Rect ROI(clicked_x, clicked_y, circle_radius, circle_radius);
+
+      cv::Mat cropped_gray_image = gray_image(ROI);
+
+      cv::Mat hist;
+      cv::calcHist(&cropped_gray_image, 1, 0, cv::Mat(), hist, 1, &glcm_gray_scale, &hist_range, uniform, accumulate);
+
+      int hist_w = 512; int hist_h = 400;
+      int bin_w = cvRound( (double) hist_w/GLCM_GRAY_SCALE );
+
+      cv::Mat hist_image( hist_h, hist_w, CV_8UC3, cv::Scalar(0,0,0) );
+
+      cv::normalize(hist, hist, 0, hist_image.rows, cv::NORM_MINMAX, -1, cv::Mat() );
+
+      /// Draw for each channel
+      for( int i = 1; i < GLCM_GRAY_SCALE; i++ )
+      {
+          cv::line( hist_image, cv::Point( bin_w*(i-1), hist_h - cvRound(hist.at<float>(i-1)) ) ,
+                           cv::Point( bin_w*(i), hist_h - cvRound(hist.at<float>(i)) ),
+                           cv::Scalar( 0, 0, 255), 2, 8, 0  );
+      }
+
+      /// Display
+      cv::namedWindow("Histograma", CV_WINDOW_AUTOSIZE );
+      cv::imshow("Histograma", hist_image );
+
+      gtk_dialog_run(result_dialog);
+      gtk_widget_destroy((GtkWidget*)result_dialog);
+
       FILE* fp = fopen("training.csv", "a");
-      fprintf(fp, "%d,%f,%f,%f,%f\n", injury ? 1 : 0, 0.0f, 0.0f, 0.0f, 0.0f);
+      fprintf(fp, "%d,%f,%f,%f,%f\n", injury ? 1 : 0, homogenity, entropy, energy, contrast);
       fclose(fp);
+    }
+  }
+  else if (classifying)
+  {
+    gtk_widget_queue_draw(event_box);
+
+    GtkDialog *dialog;
+    GtkDialogFlags flags = (GtkDialogFlags)(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT);
+    dialog = (GtkDialog*)gtk_dialog_new_with_buttons ("Descritores", (GtkWindow*)window, flags, "Próximo", GTK_RESPONSE_YES, NULL);
+    GtkWidget *check1 = gtk_toggle_button_new_with_label ("Homogeneidade");
+    GtkWidget *check2 = gtk_toggle_button_new_with_label ("Entropia");
+    GtkWidget *check3 = gtk_toggle_button_new_with_label ("Energia");
+    GtkWidget *check4 = gtk_toggle_button_new_with_label ("Contraste");
+
+    gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog), check1, FALSE, FALSE, 10);
+    gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog), check2, FALSE, FALSE, 10);
+    gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog), check3, FALSE, FALSE, 10);
+    gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog), check4, FALSE, FALSE, 10);
+
+    gtk_widget_show (check1);
+    gtk_widget_show (check2);
+    gtk_widget_show (check3);
+    gtk_widget_show (check4);
+
+    gint result = gtk_dialog_run(dialog);
+
+    if (result != GTK_RESPONSE_DELETE_EVENT)
+    {
+      bool homogenity = gtk_toggle_button_get_active ((GtkToggleButton*) check1);
+      bool entropy = gtk_toggle_button_get_active ((GtkToggleButton*) check2);
+      bool energy = gtk_toggle_button_get_active ((GtkToggleButton*) check3);
+      bool contrast = gtk_toggle_button_get_active ((GtkToggleButton*) check4);
+
+      gtk_widget_destroy((GtkWidget*)dialog);
+
+      GtkDialog *dialog2;
+      dialog2 = (GtkDialog*)gtk_dialog_new_with_buttons ("Classificador", (GtkWindow*)window, flags, "Classificar", GTK_RESPONSE_YES, NULL);
+      GtkWidget *check5 = gtk_toggle_button_new_with_label ("Euclidiano");
+      GtkWidget *check6 = gtk_toggle_button_new_with_label ("Vetorial");
+      GtkWidget *check7 = gtk_toggle_button_new_with_label ("Mahalanobis");
+
+      gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog2), check5, FALSE, FALSE, 10);
+      gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog2), check6, FALSE, FALSE, 10);
+      gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog2), check7, FALSE, FALSE, 10);
+
+      gtk_widget_show (check5);
+      gtk_widget_show (check6);
+      gtk_widget_show (check7);
+
+      result = gtk_dialog_run(dialog2);
+
+      if (result != GTK_RESPONSE_DELETE_EVENT)
+      {
+        bool euclidian = gtk_toggle_button_get_active ((GtkToggleButton*) check5);
+        bool vectorial = gtk_toggle_button_get_active ((GtkToggleButton*) check6);
+        bool mahalanobis = gtk_toggle_button_get_active ((GtkToggleButton*) check7);
+
+        gtk_widget_destroy((GtkWidget*)dialog2);
+      }
     }
   }
   else
@@ -260,10 +473,6 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
   }
 
   return TRUE;
-}
-
-void check_homogenity(GtkWidget *widget, gpointer data)
-{
 }
 
 //iniciar fase de treinamento
@@ -345,20 +554,6 @@ int main (int argc, char *argv[])
 	GtkWidget* menubox = gtk_box_new(GtkOrientation::GTK_ORIENTATION_HORIZONTAL, 0);
   imagebox = gtk_event_box_new();
 
-  /** DEBUGANDO OS TAMANHOS DOS CONTAINERS /
-  GdkColor color;
-
-  gdk_color_parse ("red", &color);
-  gtk_widget_modify_bg ( GTK_WIDGET(imagebox), GTK_STATE_NORMAL, &color);
-
-  gdk_color_parse ("blue", &color);
-  gtk_widget_modify_bg ( GTK_WIDGET(menubox), GTK_STATE_NORMAL, &color);
-
-  gdk_color_parse ("green", &color);
-  gtk_widget_modify_bg ( GTK_WIDGET(mainbox), GTK_STATE_NORMAL, &color);
-
-  /** FIM DEBUG **/
-
   gtk_container_add(GTK_CONTAINER(mainbox), menubox);
   gtk_container_add(GTK_CONTAINER(mainbox), imagebox);
 
@@ -375,7 +570,7 @@ int main (int argc, char *argv[])
   GtkWidget* toolsMi = gtk_menu_item_new_with_label("Ferramentas");
 	GtkWidget* windowingMi = gtk_menu_item_new_with_label("Janelamento");
 	GtkWidget* trainMi = gtk_menu_item_new_with_label("Treinar/Parar");
-	GtkWidget* classifyMi = gtk_menu_item_new_with_label("Classificar");
+	GtkWidget* classifyMi = gtk_menu_item_new_with_label("Classificar/Parar");
 
   GtkWidget* classifierMi = gtk_menu_item_new_with_label("Classificador");
 	GtkWidget* classifierOpenMi = gtk_menu_item_new_with_label("Visualizar");
@@ -420,6 +615,7 @@ int main (int argc, char *argv[])
 	g_signal_connect(G_OBJECT(quitMi), "activate", G_CALLBACK(gtk_main_quit), NULL);
 	g_signal_connect(G_OBJECT(openMi), "activate", G_CALLBACK(load_file), NULL);
   g_signal_connect(G_OBJECT(trainMi), "activate", G_CALLBACK(set_training), NULL);
+  g_signal_connect(G_OBJECT(classifyMi), "activate", G_CALLBACK(set_classifying), NULL);
   g_signal_connect(G_OBJECT(windowingMi), "activate", G_CALLBACK(windowing), NULL);
   g_signal_connect(G_OBJECT(classifierOpenMi), "activate", G_CALLBACK(visualize_classifier), NULL);
 	g_signal_connect_swapped(G_OBJECT(window), "destroy", G_CALLBACK(gtk_main_quit), NULL);

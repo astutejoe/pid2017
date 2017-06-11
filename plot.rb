@@ -23,8 +23,8 @@ if ARGV.length == 2
   healthies_y = []
 
   CSV.foreach("training.csv") do |row|
-    x = row[ARGV[0].to_i].to_i
-    y = row[ARGV[1].to_i].to_i
+    x = row[ARGV[0].to_i].to_f
+    y = row[ARGV[1].to_i].to_f
 
     if row[0] == "1"
       injuries_x << x
@@ -43,8 +43,8 @@ if ARGV.length == 2
   sc.color(healthy_color)
   sc.title("Regioes Sadias")
 
-  plot.x_label(descritors[ARGV[0].to_i])
-  plot.y_label(descritors[ARGV[1].to_i])
+  plot.x_label(descritors[ARGV[0].to_i-1])
+  plot.y_label(descritors[ARGV[1].to_i-1])
 
   plot.legend(true)
 
@@ -64,9 +64,9 @@ else
   healthies_z = []
 
   CSV.foreach("training.csv") do |row|
-    x = row[ARGV[0].to_i].to_i
-    y = row[ARGV[1].to_i].to_i
-    z = row[ARGV[2].to_i].to_i
+    x = row[ARGV[0].to_i].to_f
+    y = row[ARGV[1].to_i].to_f
+    z = row[ARGV[2].to_i].to_f
 
     if row[0] == "1"
       injuries_x << x

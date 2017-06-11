@@ -35,12 +35,12 @@ require(['d3'], function(d3){window['d3']=d3;console.log('finished loading d3');
 }
 </script>
 </head>
-<body><div id='vis-1f6b9263-62de-44a7-a813-d88488d63891'></div>
+<body><div id='vis-a7e8b713-d26d-4532-954c-ee8165cee5dd'></div>
 <script>
 (function(){
     var render = function(){
-        var model = {"panes":[{"diagrams":[{"type":"scatter","options":{"x":"data0","y":"data1","color":"#ff0000","title":"Lesoes"},"data":"b74334a7-18c9-4023-8cdc-358f316a6250"},{"type":"scatter","options":{"x":"data0","y":"data1","color":"#0000ff","title":"Regioes Sadias"},"data":"a994f3b9-3228-424d-a8ba-842411cf2204"}],"options":{"x_label":"Energia","y_label":"Contraste","legend":true,"zoom":true,"width":800,"xrange":[5,15],"yrange":[3,9]}}],"data":{"b74334a7-18c9-4023-8cdc-358f316a6250":[{"data0":10,"data1":3},{"data0":5,"data1":9}],"a994f3b9-3228-424d-a8ba-842411cf2204":[{"data0":8,"data1":7},{"data0":15,"data1":6}]},"extension":["Elegans"]}
-        var id_name = '#vis-1f6b9263-62de-44a7-a813-d88488d63891';
+        var model = {"panes":[{"diagrams":[{"type":"scatter","options":{"x":"x","y":"y","z":"z","fill_color":"#ff0000","name":"Lesoes"},"data":"69f1ccda-21e7-48ef-b7f4-248cbd19b223"},{"type":"scatter","options":{"x":"x","y":"y","z":"z","fill_color":"#0000ff","name":"Reg. Sadias"},"data":"5d02068f-07b9-43bc-b830-fe0d31be63f5"}],"options":{"width":1920,"height":1080},"extension":"Elegans"}],"data":{"69f1ccda-21e7-48ef-b7f4-248cbd19b223":[{"x":0.680315,"y":3.802277,"z":1.118993},{"x":0.642934,"y":4.658033,"z":1.427741},{"x":0.596665,"y":4.282151,"z":4.761966},{"x":0.650429,"y":4.509869,"z":1.503879},{"x":0.794907,"y":1.580768,"z":0.410185},{"x":0.624936,"y":4.702445,"z":3.472832}],"5d02068f-07b9-43bc-b830-fe0d31be63f5":[{"x":0.793896,"y":1.618838,"z":0.412209},{"x":0.72884,"y":2.662215,"z":1.3384},{"x":0.807718,"y":1.341027,"z":0.384565},{"x":0.851036,"y":1.085997,"z":0.297929},{"x":0.655143,"y":4.344005,"z":1.455767},{"x":0.641094,"y":4.89246,"z":2.098686}]},"extension":["Elegans"]}
+        var id_name = '#vis-a7e8b713-d26d-4532-954c-ee8165cee5dd';
         Nyaplot.core.parse(model, id_name);
 
         require(['downloadable'], function(downloadable){
