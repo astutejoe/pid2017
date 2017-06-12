@@ -430,15 +430,12 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
       GtkDialog *dialog2;
       dialog2 = (GtkDialog*)gtk_dialog_new_with_buttons ("Classificador", (GtkWindow*)window, flags, "Classificar", GTK_RESPONSE_YES, NULL);
       GtkWidget *check5 = gtk_toggle_button_new_with_label ("Euclidiano");
-      GtkWidget *check6 = gtk_toggle_button_new_with_label ("Vetorial");
       GtkWidget *check7 = gtk_toggle_button_new_with_label ("Mahalanobis");
 
       gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog2), check5, FALSE, FALSE, 10);
-      gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog2), check6, FALSE, FALSE, 10);
       gtk_box_pack_start ((GtkBox*)gtk_dialog_get_content_area(dialog2), check7, FALSE, FALSE, 10);
 
       gtk_widget_show (check5);
-      gtk_widget_show (check6);
       gtk_widget_show (check7);
 
       result = gtk_dialog_run(dialog2);
@@ -446,7 +443,6 @@ static gboolean image_released (GtkWidget *event_box, GdkEventButton *event, gpo
       if (result != GTK_RESPONSE_DELETE_EVENT)
       {
         bool euclidian = gtk_toggle_button_get_active ((GtkToggleButton*) check5);
-        bool vectorial = gtk_toggle_button_get_active ((GtkToggleButton*) check6);
         bool mahalanobis = gtk_toggle_button_get_active ((GtkToggleButton*) check7);
 
         gtk_widget_destroy((GtkWidget*)dialog2);
